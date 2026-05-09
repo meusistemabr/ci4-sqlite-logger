@@ -1,0 +1,32 @@
+{
+    "name": "meusistemabr/ci4-sqlite-logger",
+    "description": "Logger SQLite rotativo para aplicações CodeIgniter 4.",
+    "type": "library",
+    "require": {
+        "php": ">=8.1"
+    },
+    "require-dev": {
+        "codeigniter4/framework": "^4.0"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "MeuSistemaBR\\Ci4SqliteLogger\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Meu Sistema - Dev",
+            "email": "contato@meusistema.com.br"
+        }
+    ],
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "extra": {
+        "codeigniter4": {
+            "commands": [
+                "MeusistemaBR\\Ci4SqliteLogger\\Commands\\LogsCheck"
+            ]
+        }
+    }
+}
