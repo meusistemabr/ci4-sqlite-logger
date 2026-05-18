@@ -17,7 +17,7 @@ class SqliteHandler extends BaseHandler
     {
         parent::__construct($config);
         
-        $this->dbPath      = $config['dbPath'] ?? WRITEPATH . 'database/logs.sqlite';
+        $this->dbPath      = $config['dbPath'] ?? WRITEPATH . 'database/system_logs.db';
         $this->maxFileSize = $config['maxFileSize'] ?? 10 * 1024 * 1024; // 10MB padrão
         $this->validateStorage();
         $this->initDatabase();
@@ -39,20 +39,23 @@ class SqliteHandler extends BaseHandler
     }
     protected function initDatabase()
     {
-        // Se o arquivo atingiu o limite, rotaciona antes de qualquer coisa
         if (file_exists($this->dbPath) && filesize($this->dbPath) >= $this->maxFileSize) {
             $this->rotateLogs();
         }
 
         try {
             $db = new PDO("sqlite:" . $this->dbPath);
-            $db->exec("PRAGMA journal_mode = WAL;");
-            $db->exec("PRAGMA application_id = " . self::APP_ID);
-            $db->exec("PRAGMA user_version = 1");
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $db->exec("PRAGMA journal_mode = DELETE;");
+            $db->exec("PRAGMA synchronous = NORMAL;");
+            $db->exec("PRAGMA secure_delete = OFF;");
+            $db->exec("PRAGMA application_id = " . self::APP_ID . ";");
+            $db->exec("PRAGMA user_version = 1;");
+            $db->beginTransaction();
             $db->exec("CREATE TABLE IF NOT EXISTS system_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 uuid TEXT,
-                level TEXT,
+                level TEXT DEFAULT 'info',
                 message TEXT,
                 type TEXT,
                 context TEXT,
@@ -60,20 +63,26 @@ class SqliteHandler extends BaseHandler
                 device_info TEXT,
                 remote_port INTEGER,
                 hash_chain TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                timestamp DATETIME DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW'))
             )");
 
             $db->exec("CREATE TABLE IF NOT EXISTS lib_metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT
             )");
+            $db->commit();
             $stmt = $db->query("SELECT COUNT(*) FROM lib_metadata");
             if ($stmt->fetchColumn() == 0) {
                 $this->saveMetadata($db);
             }
-            $db = null;
-        } catch (Exception $e) {
-            // error handling, talvez logar isso no log padrão de erro do CI4
+            $db->exec("PRAGMA wal_checkpoint(FULL);");
+
+        } catch (\Exception $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            // log_message('error', '[SQLiteLogger] Error: ' . $e->getMessage());
+            // podemos assumir um log universal ou notificado de forma diferente, mas não podemos deixar de registrar o erro.
         }
     }
 
@@ -83,7 +92,8 @@ class SqliteHandler extends BaseHandler
             'lib_name'    => 'meusistemabr/ci4-sqlite-logger',
             'lib_version' => self::VERSION,
             'installed_at' => date('Y-m-d H:i:s'),
-            'security_hash' => hash('sha256', $this->dbPath . php_uname('n'))
+            'machine_guid' => $this->get_machine_id(),
+            'vendor_info' => 'meusistema.com.br'
         ];
 
         $stmt = $db->prepare("INSERT INTO lib_metadata (key, value) VALUES (?, ?)");
@@ -92,13 +102,52 @@ class SqliteHandler extends BaseHandler
         }
     }
 
+    private function get_machine_id() {
+        $os = strtoupper(PHP_OS);
+        $id = '';
+
+        try {
+            if (strpos($os, 'WIN') !== false) {
+                $id = shell_exec('wmic path win32_computersystemproduct get uuid');
+                $id = str_replace(["UUID", "\r", "\n", " "], "", $id);
+            } elseif (strpos($os, 'LINUX') !== false) {
+                if (file_exists('/etc/machine-id')) {
+                    $id = file_get_contents('/etc/machine-id');
+                } elseif (file_exists('/var/lib/dbus/machine-id')) {
+                    $id = file_get_contents('/var/lib/dbus/machine-id');
+                }
+            } elseif (strpos($os, 'DARWIN') !== false) {
+                $id = shell_exec('ioreg -rd1 -c IOPlatformExpertDevice | grep -i IOPlatformUUID');
+                preg_match('/"IOPlatformUUID" = "([^"]+)"/', $id, $matches);
+                $id = $matches[1] ?? '';
+            }
+        } catch (Exception $e) {
+            $id = null;
+        }
+
+        // fallback
+        if (empty(trim($id))) {
+            $fallbackFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . '.sys_machine_id';
+            
+            if (file_exists($fallbackFile)) {
+                $id = file_get_contents($fallbackFile);
+            } else {
+                $entropy = php_uname() . gethostname();
+                $id = hash('sha256', $entropy . uniqid(mt_rand(), true));
+                @file_put_contents($fallbackFile, $id);
+            }
+        }
+
+        return hash('sha256', trim($id));
+    }
+
     protected function rotateLogs()
     {
         try {
             $db = new PDO("sqlite:" . $this->dbPath);
             $db->exec('PRAGMA wal_checkpoint(FULL);');
             $db = null;
-            $backupPath = str_replace('.sqlite', '_' . date('Ymd_His') . '.sqlite', $this->dbPath);
+            $backupPath = str_replace('.db', '_' . date('Ymd_His') . '.db', $this->dbPath);
             
             rename($this->dbPath, $backupPath);
         } catch (Exception $e) {

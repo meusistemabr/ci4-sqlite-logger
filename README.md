@@ -53,13 +53,16 @@ Diferente do log padrão, salvamos:
 
 ## Apoiado e mantido por
 
-![App Screenshot](https://dummyimage.com/468x300?text=App+Screenshot+Here)
-Meu Sistema - Sistemas online personalizados 
-Acesse: https://meusistema.com.br
-Fale consoco em: contato [at] meusistema.com.br
+<img src="https://cdn-a1-br-sl.meusistema.com.br/imagens/logo_ms.png" alt="MeuSistema sistemas online personalizados" style="width:150px;float:left;padding-left:0px;margin-right:20px;">
+<div style="padding-left:50px;">
+<p>
+<strong>Meu Sistema - Sistemas online personalizados</strong><br>
+Acesse: <a href="https://meusistema.com.br" target="_blank" title="Sistemas online personalizados">https://meusistema.com.br</a><br>
+Fale consoco em: contato[at]meusistema.com.br
+</p>
+</div>
 
 ## Licença
 
 [MIT](https://choosealicense.com/licenses/mit/)
-
 
