@@ -11,7 +11,7 @@
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "MeuSistemaBR\\Ci4SqliteLogger\\": "src/"
+            "meusistemabr\\ci4-sqlite-logger\\": "src/"
         }
     },
     "authors": [
@@ -25,7 +25,7 @@
     "extra": {
         "codeigniter4": {
             "commands": [
-                "MeusistemaBR\\Ci4SqliteLogger\\Commands\\LogsCheck"
+                "meusistemabr\\ci4-sqlite-logger\\Commands\\LogsCheck"
             ]
         }
     }
