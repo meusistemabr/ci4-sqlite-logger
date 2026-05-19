@@ -1,7 +1,7 @@
 <?php
 
 namespace MeusistemaBR\Ci4SqliteLogger;
-
+// use to referency: MeusistemaBR\Ci4SqliteLogger\SqliteHandler;
 use CodeIgniter\Log\Handlers\BaseHandler;
 use PDO;
 use Exception;
