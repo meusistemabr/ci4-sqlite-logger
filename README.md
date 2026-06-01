@@ -24,15 +24,20 @@ Instale a lib via Composer:
     
 ## ⚙️ Configuração
 
-Abra o arquivo ```app/Config/Logger.php``` e adicione o handler no array ```$handlers```:
+Abra o arquivo ```app/Config/Logger.php``` instancie a biblioteca do SQLite Logger no início do arquivo, logo após as instâncias padrão do Codeigniter, adicione ```use MeusistemaBR\Ci4SqliteLogger\SqliteHandler;``` e, adicione o handler no array ```$handlers``` no mesmo arquivo, veja um exemplo:
 
 ```php
+  ...
+  ...
+  ...
+  ...
+  ... // bastante codigo acima e algumas instruções
   public $handlers = [
     // ... outros handlers
-    'MeusistemaBR\Ci4SqliteLogger\SqliteHandler' => [
+    SqliteHandler::class => [
         'handles'     => ['critical', 'error', 'debug', 'info', 'notice'],
-        'dbPath'      => WRITEPATH . 'database/system_logs.sqlite',
-        'maxFileSize' => 10 * 1024 * 1024, // 10MB para rotação automática
+        'dbPath'      => WRITEPATH . 'database/system_logs.db', // aqui você pode inserir o caminho do banco de dados que preferir, desde que possua permissão de leitura/escrita e espaço disponível. Você pode deixar essa variável vazia também, o caminho default é WRITEPATH . 'database/system_logs.db'
+        'maxFileSize' => 10 * 1024 * 1024, // 10MB para rotação automática, você pode digitar valores maiores ou menores, ao chegar no limiar, o sistema "tranca" o Banco de Dados anterior e abre outro Banco de Dados para continuar.
     ],
 ];
 ```

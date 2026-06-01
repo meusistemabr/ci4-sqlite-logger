@@ -5,13 +5,19 @@ namespace MeusistemaBR\Ci4SqliteLogger;
 use CodeIgniter\Log\Handlers\BaseHandler;
 use PDO;
 use Exception;
+use RuntimeException;
+use Throwable;
 
 class SqliteHandler extends BaseHandler
 {
-    const VERSION = '1.0.0';
+    const VERSION = '1.1.3';
     const APP_ID  = 0x4D534252;
     protected $dbPath;
     protected $maxFileSize; // em bytes (ex: 10MB)
+    protected bool $available = true;
+    protected bool $reportErrors = true;
+    protected bool $throwOnError = false;
+    protected ?string $lastError = null;
 
     public function __construct(array $config)
     {
@@ -19,8 +25,15 @@ class SqliteHandler extends BaseHandler
         
         $this->dbPath      = $config['dbPath'] ?? WRITEPATH . 'database/system_logs.db';
         $this->maxFileSize = $config['maxFileSize'] ?? 10 * 1024 * 1024; // 10MB padrão
-        $this->validateStorage();
-        $this->initDatabase();
+        $this->reportErrors = (bool) ($config['reportErrors'] ?? true);
+        $this->throwOnError = (bool) ($config['throwOnError'] ?? false);
+
+        try {
+            $this->validateStorage();
+            $this->initDatabase();
+        } catch (Throwable $e) {
+            $this->fail('Falha ao inicializar o banco SQLite de logs.', $e);
+        }
     }
 
 
@@ -43,9 +56,10 @@ class SqliteHandler extends BaseHandler
             $this->rotateLogs();
         }
 
+        $db = null;
+
         try {
-            $db = new PDO("sqlite:" . $this->dbPath);
-            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $db = $this->connect();
             $db->exec("PRAGMA journal_mode = DELETE;");
             $db->exec("PRAGMA synchronous = NORMAL;");
             $db->exec("PRAGMA secure_delete = OFF;");
@@ -75,14 +89,11 @@ class SqliteHandler extends BaseHandler
             if ($stmt->fetchColumn() == 0) {
                 $this->saveMetadata($db);
             }
-            $db->exec("PRAGMA wal_checkpoint(FULL);");
-
-        } catch (\Exception $e) {
-            if ($db->inTransaction()) {
+        } catch (Throwable $e) {
+            if ($db instanceof PDO && $db->inTransaction()) {
                 $db->rollBack();
             }
-            // log_message('error', '[SQLiteLogger] Error: ' . $e->getMessage());
-            // podemos assumir um log universal ou notificado de forma diferente, mas não podemos deixar de registrar o erro.
+            $this->fail('Falha ao criar ou preparar as tabelas do banco SQLite de logs.', $e);
         }
     }
 
@@ -107,7 +118,11 @@ class SqliteHandler extends BaseHandler
         $id = '';
 
         try {
-            if (strpos($os, 'WIN') !== false) {
+            if (strpos($os, 'DARWIN') !== false) {
+                $id = shell_exec('ioreg -rd1 -c IOPlatformExpertDevice | grep -i IOPlatformUUID') ?: '';
+                preg_match('/"IOPlatformUUID" = "([^"]+)"/', $id, $matches);
+                $id = $matches[1] ?? '';
+            } elseif (strncmp($os, 'WIN', 3) === 0) {
                 $id = shell_exec('wmic path win32_computersystemproduct get uuid');
                 $id = str_replace(["UUID", "\r", "\n", " "], "", $id);
             } elseif (strpos($os, 'LINUX') !== false) {
@@ -116,10 +131,6 @@ class SqliteHandler extends BaseHandler
                 } elseif (file_exists('/var/lib/dbus/machine-id')) {
                     $id = file_get_contents('/var/lib/dbus/machine-id');
                 }
-            } elseif (strpos($os, 'DARWIN') !== false) {
-                $id = shell_exec('ioreg -rd1 -c IOPlatformExpertDevice | grep -i IOPlatformUUID');
-                preg_match('/"IOPlatformUUID" = "([^"]+)"/', $id, $matches);
-                $id = $matches[1] ?? '';
             }
         } catch (Exception $e) {
             $id = null;
@@ -144,35 +155,44 @@ class SqliteHandler extends BaseHandler
     protected function rotateLogs()
     {
         try {
-            $db = new PDO("sqlite:" . $this->dbPath);
+            $db = $this->connect();
             $db->exec('PRAGMA wal_checkpoint(FULL);');
             $db = null;
             $backupPath = str_replace('.db', '_' . date('Ymd_His') . '.db', $this->dbPath);
             
-            rename($this->dbPath, $backupPath);
-        } catch (Exception $e) {
-            // Se falhar a rotação, o CI4 pode registrar isso no log padrão de erro
+            if (!rename($this->dbPath, $backupPath)) {
+                throw new RuntimeException("Não foi possível rotacionar o banco de logs para: {$backupPath}");
+            }
+        } catch (Throwable $e) {
+            $this->fail('Falha ao rotacionar o banco SQLite de logs.', $e);
         }
     }
 
     public function handle($level, $message, array $context = []): bool
     {
+        if (!$this->available) {
+            return false;
+        }
+
         try {
-            $db = new PDO("sqlite:" . $this->dbPath);
+            $db = $this->connect();
             
             $request = \Config\Services::request();
-            $agent   = $request->getUserAgent();
+            $agent   = method_exists($request, 'getUserAgent') ? $request->getUserAgent() : null;
 
             $bytes      = random_bytes(16);
             $bytes[6]   = chr(ord($bytes[6]) & 0x0f | 0x40); // v4
             $bytes[8]   = chr(ord($bytes[8]) & 0x3f | 0x80); // variant
             $uuidStr    = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
-            $ipAddress   = $request->getIPAddress();
+            $ipAddress   = method_exists($request, 'getIPAddress') ? $request->getIPAddress() : null;
             $remotePort  = $_SERVER['REMOTE_PORT'] ?? 0;
-            $deviceInfo  = $agent->getBrowser() . ' ' . $agent->getVersion() . ' on ' . $agent->getPlatform();
+            $deviceInfo  = $agent ? trim($agent->getBrowser() . ' ' . $agent->getVersion() . ' on ' . $agent->getPlatform()) : php_sapi_name();
 
             $type    = $this->config['type'] ?? 'system'; 
-            $context = json_encode($this->config['context'] ?? []);
+            $context = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($context === false) {
+                $context = json_encode(['json_error' => json_last_error_msg()]);
+            }
             
             $stmtLast = $db->query("SELECT hash_chain FROM system_logs ORDER BY id DESC LIMIT 1");
             $lastHash = $stmtLast->fetchColumn() ?: 'genesis_block';
@@ -182,8 +202,51 @@ class SqliteHandler extends BaseHandler
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             $stmt = $db->prepare($sql);
             return $stmt->execute([$uuidStr, $level, $message, $type, $context, $ipAddress, $deviceInfo, $remotePort, $newHash]);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            $this->fail('Falha ao gravar log no banco SQLite.', $e);
             return false;
+        }
+    }
+
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
+    }
+
+    public function isAvailable(): bool
+    {
+        return $this->available;
+    }
+
+    protected function connect(): PDO
+    {
+        if (!extension_loaded('pdo_sqlite')) {
+            throw new RuntimeException('A extensão pdo_sqlite não está carregada.');
+        }
+
+        $db = new PDO("sqlite:" . $this->dbPath);
+        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        return $db;
+    }
+
+    protected function fail(string $message, ?Throwable $e = null): void
+    {
+        $detail = $message;
+        if ($e !== null) {
+            $detail .= ' ' . $e->getMessage();
+        }
+        $detail .= " Caminho: {$this->dbPath}";
+
+        $this->lastError = $detail;
+        $this->available = false;
+
+        if ($this->reportErrors) {
+            error_log('[SQLiteLogger] ' . $detail);
+        }
+
+        if ($this->throwOnError && $e !== null) {
+            throw $e;
         }
     }
 
@@ -196,7 +259,7 @@ class SqliteHandler extends BaseHandler
     public function verifyIntegrity(): bool
     {
         try {
-            $db = new PDO("sqlite:" . $this->dbPath);
+            $db = $this->connect();
             $stmt = $db->query("SELECT level, message, hash_chain FROM system_logs ORDER BY id ASC");
             $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -212,7 +275,8 @@ class SqliteHandler extends BaseHandler
             }
 
             return true;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            $this->fail('Falha ao verificar a integridade do banco SQLite de logs.', $e);
             return false;
         }
     }
