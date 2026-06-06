@@ -56,6 +56,20 @@ Diferente do log padrão, salvamos:
 - **Contexto JSON:** Dados estruturados para auditoria.
 - **Fingerprint:** Informações do navegador e sistema operacional do originador.
 
+### 3. Consulta dos Logs pelo Spark
+
+Exiba os 10 registros mais recentes do banco SQLite em uso:
+
+```bash
+php spark logs:tail
+```
+
+Informe uma quantidade entre 1 e 1000 para alterar o limite:
+
+```bash
+php spark logs:tail 25
+```
+
 ## Apoiado e mantido por
 
 <img src="https://cdn-a1-br-sl.meusistema.com.br/imagens/logo_ms.png" alt="MeuSistema sistemas online personalizados" style="width:150px;float:left;padding-left:0px;margin-right:20px;">
@@ -70,4 +84,3 @@ Fale consoco em: contato[at]meusistema.com.br
 ## Licença
 
 [MIT](https://choosealicense.com/licenses/mit/)
-

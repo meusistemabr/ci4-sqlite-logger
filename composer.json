@@ -25,7 +25,8 @@
     "extra": {
         "codeigniter4": {
             "commands": [
-                "MeusistemaBR\\Ci4SqliteLogger\\Commands\\LogsCheck"
+                "MeusistemaBR\\Ci4SqliteLogger\\Commands\\LogsCheck",
+                "MeusistemaBR\\Ci4SqliteLogger\\Commands\\LogsTail"
             ]
         }
     }

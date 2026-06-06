@@ -3,6 +3,7 @@
 namespace MeusistemaBR\Ci4SqliteLogger;
 // use to referency: MeusistemaBR\Ci4SqliteLogger\SqliteHandler;
 use CodeIgniter\Log\Handlers\BaseHandler;
+use CodeIgniter\Log\Logger;
 use PDO;
 use Exception;
 use RuntimeException;
@@ -185,10 +186,11 @@ class SqliteHandler extends BaseHandler
             $bytes[8]   = chr(ord($bytes[8]) & 0x3f | 0x80); // variant
             $uuidStr    = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
             $ipAddress   = method_exists($request, 'getIPAddress') ? $request->getIPAddress() : null;
-            $remotePort  = $_SERVER['REMOTE_PORT'] ?? 0;
+            $remotePort  = $this->getRemotePort($request);
             $deviceInfo  = $agent ? trim($agent->getBrowser() . ' ' . $agent->getVersion() . ' on ' . $agent->getPlatform()) : php_sapi_name();
 
-            $type    = $this->config['type'] ?? 'system'; 
+            $type    = $this->config['type'] ?? 'system';
+            $context = $this->getOriginalContext($context);
             $context = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($context === false) {
                 $context = json_encode(['json_error' => json_last_error_msg()]);
@@ -206,6 +208,49 @@ class SqliteHandler extends BaseHandler
             $this->fail('Falha ao gravar log no banco SQLite.', $e);
             return false;
         }
+    }
+
+    /**
+     * O Logger do CI4 não encaminha o contexto aos handlers. Enquanto o
+     * Logger::log() ainda está na pilha, recuperamos seu terceiro argumento.
+     */
+    protected function getOriginalContext(array $context): array
+    {
+        if ($context !== []) {
+            return $context;
+        }
+
+        foreach (debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT) as $frame) {
+            if (
+                ($frame['function'] ?? null) === 'log'
+                && ($frame['object'] ?? null) instanceof Logger
+                && isset($frame['args'][2])
+                && is_array($frame['args'][2])
+            ) {
+                return $frame['args'][2];
+            }
+        }
+
+        return $context;
+    }
+
+    protected function getRemotePort($request): ?int
+    {
+        $remotePort = method_exists($request, 'getServer')
+            ? $request->getServer('REMOTE_PORT')
+            : null;
+
+        if ($remotePort === null || $remotePort === '') {
+            $remotePort = $_SERVER['REMOTE_PORT'] ?? null;
+        }
+
+        if (!is_numeric($remotePort)) {
+            return null;
+        }
+
+        $remotePort = (int) $remotePort;
+
+        return $remotePort >= 1 && $remotePort <= 65535 ? $remotePort : null;
     }
 
     public function getLastError(): ?string
