@@ -41,6 +41,13 @@ class LogsTail extends BaseCommand
             return;
         }
 
+        if (!extension_loaded('pdo_sqlite')) {
+            CLI::error(
+                'A extensão pdo_sqlite não está carregada no PHP CLI: ' . PHP_BINARY
+            );
+            return;
+        }
+
         try {
             $db = new PDO('sqlite:' . $dbPath);
             $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
