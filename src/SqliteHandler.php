@@ -11,7 +11,7 @@ use Throwable;
 
 class SqliteHandler extends BaseHandler
 {
-    const VERSION = '1.1.3';
+    const VERSION = '1.2.6';
     const APP_ID  = 0x4D534252;
     protected $dbPath;
     protected $maxFileSize; // em bytes (ex: 10MB)
@@ -178,16 +178,38 @@ class SqliteHandler extends BaseHandler
         try {
             $db = $this->connect();
             
-            $request = \Config\Services::request();
-            $agent   = method_exists($request, 'getUserAgent') ? $request->getUserAgent() : null;
+            $request = null;
+            $agent   = null;
+
+            try {
+                if (class_exists('\Config\Services')) {
+                    $request = \Config\Services::request();
+                    $agent   = method_exists($request, 'getUserAgent') ? $request->getUserAgent() : null;
+                }
+            } catch (Throwable $e) {
+                $request = null;
+                $agent   = null;
+            }
 
             $bytes      = random_bytes(16);
             $bytes[6]   = chr(ord($bytes[6]) & 0x0f | 0x40); // v4
             $bytes[8]   = chr(ord($bytes[8]) & 0x3f | 0x80); // variant
             $uuidStr    = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
-            $ipAddress   = method_exists($request, 'getIPAddress') ? $request->getIPAddress() : null;
-            $remotePort  = $this->getRemotePort($request);
-            $deviceInfo  = $agent ? trim($agent->getBrowser() . ' ' . $agent->getVersion() . ' on ' . $agent->getPlatform()) : php_sapi_name();
+            $ipAddress = null;
+
+            if ($request !== null && method_exists($request, 'getIPAddress')) {
+                $ipAddress = $request->getIPAddress();
+            } else {
+                $ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+            }
+
+            $remotePort = $this->getRemotePort($request);
+
+            $deviceInfo = php_sapi_name();
+
+            if ($agent !== null) {
+                $deviceInfo = trim($agent->getBrowser() . ' ' . $agent->getVersion() . ' on ' . $agent->getPlatform());
+            }
 
             $type    = $this->config['type'] ?? 'system';
             $context = $this->getOriginalContext($context);
@@ -234,17 +256,19 @@ class SqliteHandler extends BaseHandler
         return $context;
     }
 
-    protected function getRemotePort($request): ?int
+    protected function getRemotePort($request = null): ?int
     {
-        $remotePort = method_exists($request, 'getServer')
-            ? $request->getServer('REMOTE_PORT')
-            : null;
+        $remotePort = null;
+
+        if ($request !== null && method_exists($request, 'getServer')) {
+            $remotePort = $request->getServer('REMOTE_PORT');
+        }
 
         if ($remotePort === null || $remotePort === '') {
             $remotePort = $_SERVER['REMOTE_PORT'] ?? null;
         }
 
-        if (!is_numeric($remotePort)) {
+        if (! is_numeric($remotePort)) {
             return null;
         }
 
