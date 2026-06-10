@@ -1,6 +1,6 @@
 {
     "name": "meusistemabr/ci4-sqlite-logger",
-    "description": "Logger SQLite rotativo para aplicações CodeIgniter 4.",
+    "description": "Logger SQLite rotativo e auditoria forense estruturada para aplicações CodeIgniter 4. Garanta integridade total dos seus logs com nosso sistema de rotação inteligente, mantendo um histórico completo e seguro para auditorias forenses. Ideal para aplicações que exigem conformidade rigorosa e rastreabilidade detalhada.",
     "type": "library",
     "require": {
         "php": ">=8.1",
@@ -14,7 +14,10 @@
     "autoload": {
         "psr-4": {
             "MeusistemaBR\\Ci4SqliteLogger\\": "src/"
-        }
+        },
+        "files": [
+            "src/Helpers/msbr_helper.php"
+        ]
     },
     "authors": [
         {
