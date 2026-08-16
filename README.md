@@ -3,6 +3,8 @@
 
 O CI4 SQLite Logger é uma biblioteca de logging de alta integridade para CodeIgniter 4. Diferente dos logs tradicionais em texto, ele armazena eventos em um banco de dados SQLite rotativo, utilizando uma Corrente de Custódia (Hash Chain) para garantir que os registros não sejam alterados ou deletados sem detecção.
 
+[![CodeFactor](https://www.codefactor.io/repository/github/meusistemabr/ci4-sqlite-logger/badge/main)](https://www.codefactor.io/repository/github/meusistemabr/ci4-sqlite-logger/overview/main)
+
 ## ✨ Recursos Principais
 
 - **Banco de Dados Rotativo:** Monitoramento automático do tamanho do arquivo com rotação inteligente.
